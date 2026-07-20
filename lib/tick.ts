@@ -1,9 +1,10 @@
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, gte, sql } from "drizzle-orm"
 import { db } from "./db"
 import { botSettings, positions, tickLogs, trades } from "./db/schema"
 import {
   type BotMode,
   getKlines,
+  getPrice,
   getSymbolFilters,
   placeMarketOrder,
   roundStep,
@@ -18,7 +19,7 @@ export interface SymbolOutcome {
   symbol: string
   signal: string
   reason: string
-  action: "bought" | "sold" | "skipped" | "error"
+  action: "bought" | "sold" | "skipped" | "error" | "risk-exit"
   detail?: string
 }
 
@@ -105,10 +106,26 @@ export async function runTick(): Promise<TickOutcome> {
       .where(and(eq(positions.status, "open"), eq(positions.mode, mode)))
     const openSymbols = new Set(openRows.map((r) => r.symbol))
 
+    // 1) Risk exits run first: any open position hitting its stop-loss or
+    //    take-profit is closed at market before we evaluate new signals.
+    const riskOutcomes = await checkRiskExits(mode, settings, openSymbols)
+    outcomes.push(...riskOutcomes)
+
+    // 2) Daily loss limit: if today's realized PnL has fallen to the limit,
+    //    keep managing/closing positions but stop opening new ones.
+    const dailyLossLimit = Number(settings.dailyLossLimitUsd)
+    let allowBuys = true
+    if (dailyLossLimit > 0) {
+      const dailyPnl = await getDailyRealizedPnl(mode)
+      if (dailyPnl <= -dailyLossLimit) {
+        allowBuys = false
+      }
+    }
+
     await Promise.all(
       symbols.map(async (symbol) => {
         try {
-          const outcome = await processSymbol(symbol, mode, params, settings, openSymbols)
+          const outcome = await processSymbol(symbol, mode, params, settings, openSymbols, allowBuys)
           outcomes.push(outcome)
         } catch (err) {
           outcomes.push({
@@ -125,7 +142,9 @@ export async function runTick(): Promise<TickOutcome> {
     await db.insert(tickLogs).values({
       status: "success",
       mode,
-      message: `Evaluated ${symbols.length} symbol(s)`,
+      message: allowBuys
+        ? `Evaluated ${symbols.length} symbol(s)`
+        : `Evaluated ${symbols.length} symbol(s) — buys paused (daily loss limit)`,
       details: outcomes,
     })
 
@@ -238,6 +257,118 @@ export async function closeAllPositions(): Promise<CloseAllResult> {
   }
 }
 
+// Realized PnL booked so far today (UTC) for the given mode, summed from
+// positions closed since midnight. Used to enforce the daily loss limit.
+async function getDailyRealizedPnl(mode: BotMode): Promise<number> {
+  const start = new Date()
+  start.setUTCHours(0, 0, 0, 0)
+  const rows = await db
+    .select({ pnl: positions.realizedPnl })
+    .from(positions)
+    .where(
+      and(
+        eq(positions.mode, mode),
+        eq(positions.status, "closed"),
+        gte(positions.closedAt, start),
+      ),
+    )
+  return rows.reduce((sum, r) => sum + Number(r.pnl ?? 0), 0)
+}
+
+// Market-sell an open position and record the trade + close. Shared by the
+// risk-exit path. Uses a now-based candleOpenTime so it never collides with
+// the strategy's per-candle idempotency reservation.
+async function sellPositionAtMarket(
+  pos: typeof positions.$inferSelect,
+  mode: BotMode,
+  reason: string,
+): Promise<{ fillQty: number; fillPrice: number; pnl: number }> {
+  const filters = await getSymbolFilters(mode, pos.symbol)
+  const qty = roundStep(Number(pos.quantity), filters.stepSize)
+  const order = await placeMarketOrder(mode, pos.symbol, "SELL", qty)
+  const fillQty = order.executedQty || qty
+  const fillPrice = order.price || (await getPrice(mode, pos.symbol))
+  const entryPrice = Number(pos.entryPrice)
+  const pnl = (fillPrice - entryPrice) * fillQty
+
+  await db.insert(trades).values({
+    symbol: pos.symbol,
+    side: "SELL",
+    quantity: String(fillQty),
+    price: String(fillPrice),
+    notional: String(fillQty * fillPrice),
+    orderId: String(order.orderId),
+    status: order.status,
+    mode,
+    candleOpenTime: Date.now(),
+    reason,
+  })
+
+  await db
+    .update(positions)
+    .set({
+      status: "closed",
+      exitPrice: String(fillPrice),
+      realizedPnl: String(pnl),
+      closedAt: new Date(),
+    })
+    .where(eq(positions.id, pos.id))
+
+  return { fillQty, fillPrice, pnl }
+}
+
+// Close any open position whose live price has crossed its stop-loss or
+// take-profit threshold. Returns one outcome per triggered exit.
+async function checkRiskExits(
+  mode: BotMode,
+  settings: NonNullable<Awaited<ReturnType<typeof getSettings>>>,
+  openSymbols: Set<string>,
+): Promise<SymbolOutcome[]> {
+  const slPct = Number(settings.stopLossPct)
+  const tpPct = Number(settings.takeProfitPct)
+  if (slPct <= 0 && tpPct <= 0) return []
+
+  const openPositions = await db
+    .select()
+    .from(positions)
+    .where(and(eq(positions.status, "open"), eq(positions.mode, mode)))
+
+  const results: SymbolOutcome[] = []
+
+  for (const pos of openPositions) {
+    try {
+      const price = await getPrice(mode, pos.symbol)
+      const entry = Number(pos.entryPrice)
+      const changePct = ((price - entry) / entry) * 100
+
+      let trigger: "take-profit" | "stop-loss" | null = null
+      if (tpPct > 0 && changePct >= tpPct) trigger = "take-profit"
+      else if (slPct > 0 && changePct <= -slPct) trigger = "stop-loss"
+      if (!trigger) continue
+
+      const { fillPrice, pnl } = await sellPositionAtMarket(pos, mode, trigger)
+      openSymbols.delete(pos.symbol)
+      results.push({
+        symbol: pos.symbol,
+        signal: "SELL",
+        reason: trigger,
+        action: "risk-exit",
+        detail: `${trigger} @ ${fillPrice} (${changePct.toFixed(2)}%), PnL ${pnl.toFixed(2)}`,
+      })
+    } catch (err) {
+      results.push({
+        symbol: pos.symbol,
+        signal: "SELL",
+        reason: "risk-exit error",
+        action: "error",
+        detail: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  return results
+}
+
 async function processSymbol(
   symbol: string,
   mode: BotMode,
@@ -250,6 +381,7 @@ async function processSymbol(
   },
   settings: NonNullable<Awaited<ReturnType<typeof getSettings>>>,
   openSymbols: Set<string>,
+  allowBuys: boolean,
 ): Promise<SymbolOutcome> {
   const klines = await getKlines(mode, symbol, settings.candleInterval, 200)
   const result = evaluateStrategy(klines, params)
@@ -269,6 +401,9 @@ async function processSymbol(
 
   // Only BUY if we don't already hold this symbol and we're under the cap.
   if (result.signal === "BUY") {
+    if (!allowBuys) {
+      return { ...base, action: "skipped", detail: "Daily loss limit reached — buys paused" }
+    }
     if (hasOpenPosition) {
       return { ...base, action: "skipped", detail: "Already holding a position" }
     }

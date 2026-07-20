@@ -3,12 +3,19 @@ import crypto from "crypto"
 // Binance REST client with HMAC-SHA256 request signing, no SDK dependency.
 // Testnet and live use different base URLs and different API key pairs.
 
-export type BotMode = "testnet" | "live"
+export type BotMode = "testnet" | "live" | "paper"
 
-const BASE_URLS: Record<BotMode, string> = {
+// Paper mode never talks to a signed endpoint, so it has no base URL of its
+// own. It reuses the unrestricted public market-data mirror for prices and
+// simulates order fills locally.
+const BASE_URLS: Record<"testnet" | "live", string> = {
   testnet: "https://testnet.binance.vision",
   live: "https://api.binance.com",
 }
+
+// Starting virtual cash for paper-trading accounts. Used to derive a
+// simulated USDT balance for the dashboard.
+export const PAPER_STARTING_CASH = 10000
 
 // Public market-data mirror. Binance's primary hosts (api.binance.com and
 // testnet.binance.vision) are geo-restricted (HTTP 451) from many server
@@ -89,6 +96,9 @@ async function signedRequest<T>(
   path: string,
   params: Record<string, string | number> = {},
 ): Promise<T> {
+  if (mode === "paper") {
+    throw new Error("Paper mode does not make signed requests.")
+  }
   const { key, secret } = credentials(mode)
   const timestamp = Date.now()
   const query = new URLSearchParams(
@@ -189,6 +199,21 @@ export async function placeMarketOrder(
   side: "BUY" | "SELL",
   quantity: number,
 ): Promise<OrderResult> {
+  // Paper mode: simulate an instant fill at the current market price from the
+  // public data mirror. No signed request, no real funds.
+  if (mode === "paper") {
+    const price = await getPrice(mode, symbol)
+    const quote = price * quantity
+    return {
+      orderId: Date.now(),
+      status: "FILLED",
+      executedQty: quantity,
+      cummulativeQuoteQty: quote,
+      price,
+      side,
+    }
+  }
+
   const data = await signedRequest<{
     orderId: number
     status: string

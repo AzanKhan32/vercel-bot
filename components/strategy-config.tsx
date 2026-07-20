@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Settings2 } from "lucide-react"
+import { Settings2, ShieldAlert } from "lucide-react"
 import type { BotSettings } from "@/lib/db/schema"
 import { AVAILABLE_SYMBOLS, INTERVALS } from "@/lib/types"
 import { updateSettings } from "@/app/actions/bot"
@@ -36,6 +36,9 @@ export function StrategyConfig({
   const [rsiOs, setRsiOs] = useState(30)
   const [orderSize, setOrderSize] = useState(100)
   const [maxPos, setMaxPos] = useState(3)
+  const [stopLoss, setStopLoss] = useState(0)
+  const [takeProfit, setTakeProfit] = useState(0)
+  const [dailyLossLimit, setDailyLossLimit] = useState(0)
 
   // Sync form when server settings load/change.
   useEffect(() => {
@@ -49,6 +52,9 @@ export function StrategyConfig({
     setRsiOs(settings.rsiOversold)
     setOrderSize(Number(settings.orderSizeUsd))
     setMaxPos(settings.maxOpenPositions)
+    setStopLoss(Number(settings.stopLossPct))
+    setTakeProfit(Number(settings.takeProfitPct))
+    setDailyLossLimit(Number(settings.dailyLossLimitUsd))
   }, [settings])
 
   function toggleSymbol(s: string) {
@@ -66,7 +72,7 @@ export function StrategyConfig({
     }
     startTransition(async () => {
       await updateSettings({
-        mode: (settings?.mode as "testnet" | "live") ?? "testnet",
+        mode: (settings?.mode as "testnet" | "live" | "paper") ?? "testnet",
         symbols,
         candleInterval: interval,
         fastPeriod: fast,
@@ -76,6 +82,9 @@ export function StrategyConfig({
         rsiOversold: rsiOs,
         orderSizeUsd: orderSize,
         maxOpenPositions: maxPos,
+        stopLossPct: stopLoss,
+        takeProfitPct: takeProfit,
+        dailyLossLimitUsd: dailyLossLimit,
       })
       toast.success("Strategy settings saved")
       onSaved()
@@ -133,6 +142,43 @@ export function StrategyConfig({
           <NumberField id="maxPos" label="Max positions" value={maxPos} onChange={setMaxPos} min={1} />
           <NumberField id="rsiOb" label="RSI overbought" value={rsiOb} onChange={setRsiOb} min={50} max={100} />
           <NumberField id="rsiOs" label="RSI oversold" value={rsiOs} onChange={setRsiOs} min={0} max={50} />
+        </div>
+
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="size-4 text-muted-foreground" aria-hidden="true" />
+            <Label className="text-sm font-medium">Risk controls</Label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {"Set to 0 to disable. Stop-loss and take-profit are % from entry price."}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              id="stopLoss"
+              label="Stop-loss (%)"
+              value={stopLoss}
+              onChange={setStopLoss}
+              min={0}
+              max={100}
+            />
+            <NumberField
+              id="takeProfit"
+              label="Take-profit (%)"
+              value={takeProfit}
+              onChange={setTakeProfit}
+              min={0}
+              max={1000}
+            />
+            <div className="col-span-2">
+              <NumberField
+                id="dailyLossLimit"
+                label="Daily loss limit (USDT)"
+                value={dailyLossLimit}
+                onChange={setDailyLossLimit}
+                min={0}
+              />
+            </div>
+          </div>
         </div>
 
         <Button onClick={save} disabled={isPending} className="w-full">

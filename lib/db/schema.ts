@@ -23,6 +23,13 @@ export const botSettings = pgTable("bot_settings", {
   rsiOversold: integer("rsi_oversold").notNull().default(30),
   orderSizeUsd: numeric("order_size_usd").notNull().default("100"),
   maxOpenPositions: integer("max_open_positions").notNull().default(3),
+  // Risk controls. All in "0 = disabled" convention.
+  // Stop-loss / take-profit are percentages relative to entry price.
+  stopLossPct: numeric("stop_loss_pct").notNull().default("0"),
+  takeProfitPct: numeric("take_profit_pct").notNull().default("0"),
+  // Daily realized-loss limit in USD. When today's realized PnL drops to
+  // -dailyLossLimitUsd or below, the bot stops opening new positions.
+  dailyLossLimitUsd: numeric("daily_loss_limit_usd").notNull().default("0"),
   tickLock: timestamp("tick_lock", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })

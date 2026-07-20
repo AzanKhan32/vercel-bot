@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { and, desc, eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { botSettings, positions, tickLogs, trades } from "@/lib/db/schema"
-import { getAccountBalances, getPrice, type BotMode } from "@/lib/binance"
+import { getAccountBalances, getPrice, PAPER_STARTING_CASH, type BotMode } from "@/lib/binance"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -55,13 +55,25 @@ export async function GET() {
     enrichedPositions.push({ ...p, currentPrice, unrealizedPnl: uPnl })
   }
 
-  // Balances require valid API keys; treat failure as "not configured".
+  // Balances: paper mode is simulated locally from virtual starting cash;
+  // testnet/live require valid API keys and treat failure as "not configured".
   let balances: { asset: string; free: number; locked: number }[] = []
   let balancesError: string | null = null
-  try {
-    balances = await getAccountBalances(mode)
-  } catch (err) {
-    balancesError = err instanceof Error ? err.message : String(err)
+  if (mode === "paper") {
+    // Cash deployed into open positions is locked at entry cost; the rest is
+    // free. Realized PnL is folded back into free cash.
+    const deployed = openPositions.reduce(
+      (sum, p) => sum + Number(p.entryPrice) * Number(p.quantity),
+      0,
+    )
+    const free = PAPER_STARTING_CASH + realizedPnl - deployed
+    balances = [{ asset: "USDT", free, locked: deployed }]
+  } else {
+    try {
+      balances = await getAccountBalances(mode)
+    } catch (err) {
+      balancesError = err instanceof Error ? err.message : String(err)
+    }
   }
 
   return NextResponse.json({

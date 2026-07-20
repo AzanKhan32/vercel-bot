@@ -7,7 +7,7 @@ import { botSettings } from "@/lib/db/schema"
 import { closeAllPositions, runTick, type CloseAllResult, type TickOutcome } from "@/lib/tick"
 
 export interface SettingsInput {
-  mode: "testnet" | "live"
+  mode: "testnet" | "live" | "paper"
   symbols: string[]
   candleInterval: string
   fastPeriod: number
@@ -17,6 +17,9 @@ export interface SettingsInput {
   rsiOversold: number
   orderSizeUsd: number
   maxOpenPositions: number
+  stopLossPct: number
+  takeProfitPct: number
+  dailyLossLimitUsd: number
 }
 
 export async function updateSettings(input: SettingsInput) {
@@ -33,6 +36,9 @@ export async function updateSettings(input: SettingsInput) {
       rsiOversold: input.rsiOversold,
       orderSizeUsd: String(input.orderSizeUsd),
       maxOpenPositions: input.maxOpenPositions,
+      stopLossPct: String(input.stopLossPct),
+      takeProfitPct: String(input.takeProfitPct),
+      dailyLossLimitUsd: String(input.dailyLossLimitUsd),
       updatedAt: new Date(),
     })
     .where(eq(botSettings.id, 1))
@@ -46,7 +52,7 @@ export async function setEnabled(enabled: boolean) {
   revalidatePath("/")
 }
 
-export async function setMode(mode: "testnet" | "live") {
+export async function setMode(mode: "testnet" | "live" | "paper") {
   // Changing mode always pauses the bot first as a safety measure.
   await db.update(botSettings).set({ mode, enabled: false, updatedAt: new Date() }).where(eq(botSettings.id, 1))
   revalidatePath("/")

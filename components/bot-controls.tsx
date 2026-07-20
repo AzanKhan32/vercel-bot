@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { AlertTriangle, Pause, Play, ShieldCheck, XOctagon } from "lucide-react"
+import { AlertTriangle, FlaskConical, Pause, Play, ShieldCheck, XOctagon } from "lucide-react"
 import type { BotSettings } from "@/lib/db/schema"
 import { killAllPositions, setEnabled, setMode } from "@/app/actions/bot"
 import { Card, CardContent } from "@/components/ui/card"
@@ -22,7 +22,9 @@ export function BotControls({
   const [confirmLive, setConfirmLive] = useState(false)
   const [confirmKill, setConfirmKill] = useState(false)
 
-  const isLive = settings?.mode === "live"
+  const mode = (settings?.mode ?? "testnet") as "testnet" | "live" | "paper"
+  const isLive = mode === "live"
+  const isPaper = mode === "paper"
   const enabled = settings?.enabled ?? false
 
   function handleKill() {
@@ -46,15 +48,15 @@ export function BotControls({
     })
   }
 
-  function switchMode(mode: "testnet" | "live") {
-    if (mode === "live" && !confirmLive) {
+  function switchMode(next: "testnet" | "live" | "paper") {
+    if (next === "live" && !confirmLive) {
       setConfirmLive(true)
       return
     }
     setConfirmLive(false)
     startTransition(async () => {
-      await setMode(mode)
-      toast.info(`Switched to ${mode.toUpperCase()} — bot paused for safety`)
+      await setMode(next)
+      toast.info(`Switched to ${next.toUpperCase()} — bot paused for safety`)
       onChange()
     })
   }
@@ -81,10 +83,16 @@ export function BotControls({
           >
             {isLive ? (
               <AlertTriangle className="mr-1 size-3" aria-hidden="true" />
+            ) : isPaper ? (
+              <FlaskConical className="mr-1 size-3" aria-hidden="true" />
             ) : (
               <ShieldCheck className="mr-1 size-3" aria-hidden="true" />
             )}
-            {isLive ? "LIVE — real funds" : "TESTNET — practice funds"}
+            {isLive
+              ? "LIVE — real funds"
+              : isPaper
+                ? "PAPER — simulated fills"
+                : "TESTNET — practice funds"}
           </Badge>
         </div>
 
@@ -93,10 +101,22 @@ export function BotControls({
           <div className="flex items-center rounded-md border p-0.5">
             <button
               type="button"
+              onClick={() => switchMode("paper")}
+              disabled={isPending}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                isPaper ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Paper
+            </button>
+            <button
+              type="button"
               onClick={() => switchMode("testnet")}
               disabled={isPending}
               className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                !isLive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                mode === "testnet"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Testnet
