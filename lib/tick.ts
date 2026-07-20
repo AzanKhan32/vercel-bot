@@ -139,6 +139,105 @@ export async function runTick(): Promise<TickOutcome> {
   }
 }
 
+export interface CloseAllResult {
+  status: "success" | "error"
+  message: string
+  closed: number
+  results: { symbol: string; status: "closed" | "error"; detail: string }[]
+}
+
+// Kill switch: immediately market-sell every open position for the current
+// mode and pause the bot. Each close is independent so one failure does not
+// block the others. Uses a unique candleOpenTime (now, in ms) per SELL so the
+// manual close never collides with the strategy's per-candle idempotency lock.
+export async function closeAllPositions(): Promise<CloseAllResult> {
+  const settings = await getSettings()
+  if (!settings) {
+    return { status: "error", message: "No bot settings found", closed: 0, results: [] }
+  }
+  const mode = settings.mode as BotMode
+
+  // Pause the bot so no new tick can open positions while we unwind.
+  await db.update(botSettings).set({ enabled: false, updatedAt: new Date() }).where(eq(botSettings.id, 1))
+
+  const openPositions = await db
+    .select()
+    .from(positions)
+    .where(and(eq(positions.status, "open"), eq(positions.mode, mode)))
+
+  if (openPositions.length === 0) {
+    return { status: "success", message: "No open positions to close", closed: 0, results: [] }
+  }
+
+  const results: CloseAllResult["results"] = []
+  let closed = 0
+
+  await Promise.all(
+    openPositions.map(async (pos) => {
+      try {
+        const filters = await getSymbolFilters(mode, pos.symbol)
+        const qty = roundStep(Number(pos.quantity), filters.stepSize)
+        const order = await placeMarketOrder(mode, pos.symbol, "SELL", qty)
+        const fillQty = order.executedQty || qty
+        const fillPrice = order.price || (await getKlines(mode, pos.symbol, settings.candleInterval, 1))[0].close
+        const entryPrice = Number(pos.entryPrice)
+        const pnl = (fillPrice - entryPrice) * fillQty
+
+        await db.insert(trades).values({
+          symbol: pos.symbol,
+          side: "SELL",
+          quantity: String(fillQty),
+          price: String(fillPrice),
+          notional: String(fillQty * fillPrice),
+          orderId: String(order.orderId),
+          status: order.status,
+          mode,
+          candleOpenTime: Date.now(),
+          reason: "kill switch",
+        })
+
+        await db
+          .update(positions)
+          .set({
+            status: "closed",
+            exitPrice: String(fillPrice),
+            realizedPnl: String(pnl),
+            closedAt: new Date(),
+          })
+          .where(eq(positions.id, pos.id))
+
+        closed += 1
+        results.push({
+          symbol: pos.symbol,
+          status: "closed",
+          detail: `Sold ${fillQty} @ ${fillPrice}, PnL ${pnl.toFixed(2)}`,
+        })
+      } catch (err) {
+        results.push({
+          symbol: pos.symbol,
+          status: "error",
+          detail: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }),
+  )
+
+  const failed = results.filter((r) => r.status === "error").length
+  await db.insert(tickLogs).values({
+    status: failed > 0 ? "error" : "success",
+    mode,
+    message: `Kill switch: closed ${closed}/${openPositions.length} position(s)`,
+    details: results,
+  })
+
+  return {
+    status: failed > 0 ? "error" : "success",
+    message: `Closed ${closed} of ${openPositions.length} position(s)`,
+    closed,
+    results,
+  }
+}
+
 async function processSymbol(
   symbol: string,
   mode: BotMode,

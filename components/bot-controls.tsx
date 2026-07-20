@@ -2,25 +2,41 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { AlertTriangle, Pause, Play, ShieldCheck } from "lucide-react"
+import { AlertTriangle, Pause, Play, ShieldCheck, XOctagon } from "lucide-react"
 import type { BotSettings } from "@/lib/db/schema"
-import { setEnabled, setMode } from "@/app/actions/bot"
+import { killAllPositions, setEnabled, setMode } from "@/app/actions/bot"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
 export function BotControls({
   settings,
+  openCount = 0,
   onChange,
 }: {
   settings: BotSettings | null | undefined
+  openCount?: number
   onChange: () => void
 }) {
   const [isPending, startTransition] = useTransition()
   const [confirmLive, setConfirmLive] = useState(false)
+  const [confirmKill, setConfirmKill] = useState(false)
 
   const isLive = settings?.mode === "live"
   const enabled = settings?.enabled ?? false
+
+  function handleKill() {
+    setConfirmKill(false)
+    startTransition(async () => {
+      const result = await killAllPositions()
+      if (result.status === "success") {
+        toast.success(result.message)
+      } else {
+        toast.error(result.message)
+      }
+      onChange()
+    })
+  }
 
   function toggleEnabled() {
     startTransition(async () => {
@@ -113,8 +129,44 @@ export function BotControls({
               </>
             )}
           </Button>
+
+          <Button
+            onClick={() => setConfirmKill(true)}
+            disabled={isPending || openCount === 0}
+            variant="outline"
+            className="gap-2 border-loss/40 text-loss hover:bg-loss/10 hover:text-loss"
+            title={openCount === 0 ? "No open positions to close" : "Close all open positions"}
+          >
+            <XOctagon className="size-4" aria-hidden="true" />
+            {openCount > 0 ? `Close all (${openCount})` : "Close all"}
+          </Button>
         </div>
       </CardContent>
+
+      {confirmKill && (
+        <CardContent className="border-t border-loss/30 bg-loss/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-loss" aria-hidden="true" />
+              <p className="text-sm text-pretty">
+                {`This immediately market-sells all ${openCount} open position(s) and pauses the bot. This cannot be undone. Continue?`}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmKill(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleKill}
+                className="bg-loss text-loss-foreground hover:bg-loss/90"
+              >
+                Yes, close all
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      )}
 
       {confirmLive && (
         <CardContent className="border-t border-loss/30 bg-loss/5 p-4">

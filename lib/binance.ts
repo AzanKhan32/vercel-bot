@@ -10,6 +10,13 @@ const BASE_URLS: Record<BotMode, string> = {
   live: "https://api.binance.com",
 }
 
+// Public market-data mirror. Binance's primary hosts (api.binance.com and
+// testnet.binance.vision) are geo-restricted (HTTP 451) from many server
+// regions, but data-api.binance.vision serves the same public endpoints
+// (klines, ticker, exchangeInfo) without that restriction. All unsigned
+// GETs go here; signed order/account requests still use BASE_URLS.
+const PUBLIC_DATA_URL = "https://data-api.binance.vision"
+
 export interface Kline {
   openTime: number
   open: number
@@ -61,10 +68,13 @@ function sign(query: string, secret: string): string {
 }
 
 async function publicGet<T>(mode: BotMode, path: string, params: Record<string, string | number>): Promise<T> {
+  // mode is intentionally unused for public data: the unrestricted mirror
+  // serves the same live market data for both testnet and live modes.
+  void mode
   const qs = new URLSearchParams(
     Object.entries(params).map(([k, v]) => [k, String(v)]),
   ).toString()
-  const url = `${BASE_URLS[mode]}${path}${qs ? `?${qs}` : ""}`
+  const url = `${PUBLIC_DATA_URL}${path}${qs ? `?${qs}` : ""}`
   const res = await fetch(url, { cache: "no-store" })
   if (!res.ok) {
     const body = await res.text()

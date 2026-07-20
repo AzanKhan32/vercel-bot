@@ -9,6 +9,8 @@ import { triggerTick } from "@/app/actions/bot"
 import { Button } from "@/components/ui/button"
 import { BotControls } from "@/components/bot-controls"
 import { SummaryCards } from "@/components/summary-cards"
+import { PriceChart } from "@/components/price-chart"
+import { BacktestPanel } from "@/components/backtest-panel"
 import { StrategyConfig } from "@/components/strategy-config"
 import { PositionsTable } from "@/components/positions-table"
 import { TradesTable } from "@/components/trades-table"
@@ -70,11 +72,17 @@ export function Dashboard() {
       </header>
 
       <div className="flex flex-col gap-6">
-        <BotControls settings={settings} onChange={() => mutate()} />
+        <BotControls
+          settings={settings}
+          openCount={data?.summary?.openCount ?? 0}
+          onChange={() => mutate()}
+        />
         <SummaryCards data={data} isLoading={isLoading} />
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 flex flex-col gap-6">
+            <PriceChart symbols={settings?.symbols ?? ["BTCUSDT"]} activeSymbol={settings?.symbols?.[0]} />
+            <BacktestPanel symbols={settings?.symbols ?? ["BTCUSDT"]} activeSymbol={settings?.symbols?.[0]} />
             <PositionsTable positions={data?.positions ?? []} />
             <TradesTable trades={data?.trades ?? []} />
           </div>

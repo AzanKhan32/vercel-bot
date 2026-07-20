@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { botSettings } from "@/lib/db/schema"
-import { runTick, type TickOutcome } from "@/lib/tick"
+import { closeAllPositions, runTick, type CloseAllResult, type TickOutcome } from "@/lib/tick"
 
 export interface SettingsInput {
   mode: "testnet" | "live"
@@ -54,6 +54,13 @@ export async function setMode(mode: "testnet" | "live") {
 
 export async function triggerTick(): Promise<TickOutcome> {
   const result = await runTick()
+  revalidatePath("/")
+  return result
+}
+
+// Kill switch: force-close all open positions and pause the bot.
+export async function killAllPositions(): Promise<CloseAllResult> {
+  const result = await closeAllPositions()
   revalidatePath("/")
   return result
 }
