@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { AlertTriangle, FlaskConical, Pause, Play, ShieldCheck, XOctagon } from "lucide-react"
 import type { BotSettings } from "@/lib/db/schema"
+import type { ReadinessStatus } from "@/lib/types"
 import { killAllPositions, setEnabled, setMode } from "@/app/actions/bot"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,10 +13,12 @@ import { Badge } from "@/components/ui/badge"
 export function BotControls({
   settings,
   openCount = 0,
+  readiness,
   onChange,
 }: {
   settings: BotSettings | null | undefined
   openCount?: number
+  readiness?: ReadinessStatus
   onChange: () => void
 }) {
   const [isPending, startTransition] = useTransition()
@@ -26,6 +29,13 @@ export function BotControls({
   const isLive = mode === "live"
   const isPaper = mode === "paper"
   const enabled = settings?.enabled ?? false
+
+  // Testnet activation is gated on readiness. Starting is blocked when not
+  // ready, but pausing an already-running bot is always allowed.
+  const startBlocked = mode === "testnet" && !enabled && readiness ? !readiness.ready : false
+  const blockingReason =
+    readiness?.checks.find((item) => item.blocking && item.status === "fail")?.message ??
+    "Complete the Testnet readiness checks before starting."
 
   function handleKill() {
     setConfirmKill(false)
@@ -42,8 +52,12 @@ export function BotControls({
 
   function toggleEnabled() {
     startTransition(async () => {
-      await setEnabled(!enabled)
-      toast[!enabled ? "success" : "info"](!enabled ? "Bot started" : "Bot paused")
+      const result = await setEnabled(!enabled)
+      if (result.ok) {
+        toast[!enabled ? "success" : "info"](result.message)
+      } else {
+        toast.error(result.message)
+      }
       onChange()
     })
   }
@@ -135,9 +149,10 @@ export function BotControls({
 
           <Button
             onClick={toggleEnabled}
-            disabled={isPending}
+            disabled={isPending || startBlocked}
             variant={enabled ? "outline" : "default"}
             className="gap-2"
+            title={startBlocked ? blockingReason : undefined}
           >
             {enabled ? (
               <>
@@ -162,6 +177,18 @@ export function BotControls({
           </Button>
         </div>
       </CardContent>
+
+      {startBlocked && (
+        <CardContent className="border-t border-primary/30 bg-primary/5 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <p className="text-sm text-pretty text-muted-foreground">
+              <span className="font-medium text-foreground">Start blocked: </span>
+              {blockingReason}
+            </p>
+          </div>
+        </CardContent>
+      )}
 
       {confirmKill && (
         <CardContent className="border-t border-loss/30 bg-loss/5 p-4">

@@ -15,12 +15,12 @@ function pnlClass(n: number) {
 }
 
 export function SummaryCards({ data, isLoading }: { data: StatusResponse | undefined; isLoading: boolean }) {
-  const realized = data?.summary.realizedPnl ?? 0
-  const unrealized = data?.summary.unrealizedPnl ?? 0
-  const openCount = data?.summary.openCount ?? 0
+  const realized = data?.summary?.realizedPnl ?? 0
+  const unrealized = data?.summary?.unrealizedPnl ?? 0
+  const openCount = data?.summary?.openCount ?? 0
 
   const quoteBalance =
-    data?.balances.find((b) => b.asset === "USDT")?.free ?? null
+    data?.balances?.find((b) => b.asset === "USDT")?.free ?? null
 
   const cards = [
     {

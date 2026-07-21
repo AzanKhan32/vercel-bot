@@ -8,6 +8,7 @@ import type { StatusResponse } from "@/lib/types"
 import { triggerTick } from "@/app/actions/bot"
 import { Button } from "@/components/ui/button"
 import { BotControls } from "@/components/bot-controls"
+import { ReadinessPanel } from "@/components/readiness-panel"
 import { SummaryCards } from "@/components/summary-cards"
 import { PriceChart } from "@/components/price-chart"
 import { BacktestPanel } from "@/components/backtest-panel"
@@ -26,8 +27,18 @@ export function Dashboard() {
   })
   const [isPending, startTransition] = useTransition()
   const [running, setRunning] = useState(false)
+  const [refreshingReadiness, setRefreshingReadiness] = useState(false)
 
   const settings = data?.settings
+
+  async function refreshReadiness() {
+    setRefreshingReadiness(true)
+    try {
+      await mutate()
+    } finally {
+      setRefreshingReadiness(false)
+    }
+  }
 
   function handleTick() {
     setRunning(true)
@@ -85,8 +96,16 @@ export function Dashboard() {
         <BotControls
           settings={settings}
           openCount={data?.summary?.openCount ?? 0}
+          readiness={data?.readiness}
           onChange={() => mutate()}
         />
+        {settings?.mode === "testnet" && (
+          <ReadinessPanel
+            readiness={data?.readiness}
+            onRefresh={refreshReadiness}
+            refreshing={refreshingReadiness}
+          />
+        )}
         <SummaryCards data={data} isLoading={isLoading} />
 
         <div className="grid gap-6 lg:grid-cols-3">
