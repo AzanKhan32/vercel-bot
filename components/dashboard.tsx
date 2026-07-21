@@ -15,6 +15,8 @@ import { StrategyConfig } from "@/components/strategy-config"
 import { PositionsTable } from "@/components/positions-table"
 import { TradesTable } from "@/components/trades-table"
 import { ActivityLog } from "@/components/activity-log"
+import { LogoutButton } from "@/components/logout-button"
+import { NotificationMonitor } from "@/components/notification-monitor"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -65,10 +67,18 @@ export function Dashboard() {
             <p className="text-sm text-muted-foreground">Binance · SMA cross + RSI filter</p>
           </div>
         </div>
-        <Button variant="outline" onClick={handleTick} disabled={running || isPending} className="gap-2">
-          <RefreshCw className={`size-4 ${running ? "animate-spin" : ""}`} aria-hidden="true" />
-          {running ? "Running tick..." : "Run tick now"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleTick} disabled={running || isPending} className="gap-2">
+            <RefreshCw className={`size-4 ${running ? "animate-spin" : ""}`} aria-hidden="true" />
+            {running ? "Running tick..." : "Run tick now"}
+          </Button>
+          <NotificationMonitor
+            trades={data?.trades ?? []}
+            logs={data?.logs ?? []}
+            balancesError={data?.balancesError ?? null}
+          />
+          <LogoutButton />
+        </div>
       </header>
 
       <div className="flex flex-col gap-6">

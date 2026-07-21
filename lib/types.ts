@@ -11,6 +11,20 @@ export interface Balance {
   locked: number
 }
 
+export interface ReadinessCheck {
+  id: string
+  label: string
+  status: "pass" | "warning" | "fail"
+  message: string
+  blocking: boolean
+}
+
+export interface ReadinessStatus {
+  ready: boolean
+  checkedAt: string
+  checks: ReadinessCheck[]
+}
+
 export interface StatusResponse {
   settings: BotSettings | null
   positions: EnrichedPosition[]
@@ -18,6 +32,7 @@ export interface StatusResponse {
   logs: TickLog[]
   balances: Balance[]
   balancesError: string | null
+  readiness: ReadinessStatus
   summary: {
     realizedPnl: number
     unrealizedPnl: number

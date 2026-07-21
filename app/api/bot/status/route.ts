@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { botSettings, positions, tickLogs, trades } from "@/lib/db/schema"
 import { getAccountBalances, getPrice, PAPER_STARTING_CASH, type BotMode } from "@/lib/binance"
+import { getTestnetReadiness } from "@/lib/readiness"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -76,8 +77,11 @@ export async function GET() {
     }
   }
 
+  const readiness = await getTestnetReadiness(settings ?? null)
+
   return NextResponse.json({
     settings,
+    readiness,
     positions: enrichedPositions,
     trades: recentTrades,
     logs,

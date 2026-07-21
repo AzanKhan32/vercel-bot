@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { botSettings } from "@/lib/db/schema"
 import { closeAllPositions, runTick, type CloseAllResult, type TickOutcome } from "@/lib/tick"
+import { getTestnetReadiness } from "@/lib/readiness"
 
 export interface SettingsInput {
   mode: "testnet" | "live" | "paper"
@@ -49,9 +50,27 @@ export async function updateSettings(input: SettingsInput) {
 
 // Start/stop the bot. Switching to live is intentionally explicit and never
 // implied by any other action.
-export async function setEnabled(enabled: boolean) {
+export async function setEnabled(enabled: boolean): Promise<{ ok: boolean; message: string }> {
+  if (enabled) {
+    const rows = await db.select().from(botSettings).where(eq(botSettings.id, 1)).limit(1)
+    const settings = rows[0]
+    if (!settings) return { ok: false, message: "Bot settings are unavailable." }
+
+    if (settings.mode === "testnet") {
+      const readiness = await getTestnetReadiness(settings)
+      if (!readiness.ready) {
+        const blockers = readiness.checks.filter((item) => item.blocking && item.status === "fail")
+        return {
+          ok: false,
+          message: blockers[0]?.message ?? "Complete the Testnet readiness checks before starting.",
+        }
+      }
+    }
+  }
+
   await db.update(botSettings).set({ enabled, updatedAt: new Date() }).where(eq(botSettings.id, 1))
   revalidatePath("/")
+  return { ok: true, message: enabled ? "Bot started" : "Bot paused" }
 }
 
 export async function setMode(mode: "testnet" | "live" | "paper") {
