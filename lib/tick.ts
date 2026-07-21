@@ -15,6 +15,21 @@ import { evaluateStrategy } from "./strategy"
 // died mid-run and allow a new one. Keeps a crashed tick from locking forever.
 const LOCK_TIMEOUT_MS = 60_000
 
+// Net realized PnL for a round trip after per-side trading fees. Fees are a
+// percentage of notional charged on both the entry and the exit, matching how
+// spot exchanges bill commission. feeRatePct of 0 yields raw gross PnL.
+function netRealizedPnl(
+  entryPrice: number,
+  exitPrice: number,
+  quantity: number,
+  feeRatePct: number,
+): number {
+  const gross = (exitPrice - entryPrice) * quantity
+  const rate = feeRatePct / 100
+  const fees = (entryPrice * quantity + exitPrice * quantity) * rate
+  return gross - fees
+}
+
 export interface SymbolOutcome {
   symbol: string
   signal: string
@@ -200,7 +215,7 @@ export async function closeAllPositions(): Promise<CloseAllResult> {
         const fillQty = order.executedQty || qty
         const fillPrice = order.price || (await getKlines(mode, pos.symbol, settings.candleInterval, 1))[0].close
         const entryPrice = Number(pos.entryPrice)
-        const pnl = (fillPrice - entryPrice) * fillQty
+        const pnl = netRealizedPnl(entryPrice, fillPrice, fillQty, Number(settings.feeRatePct))
 
         await db.insert(trades).values({
           symbol: pos.symbol,
@@ -282,6 +297,7 @@ async function sellPositionAtMarket(
   pos: typeof positions.$inferSelect,
   mode: BotMode,
   reason: string,
+  feeRatePct: number,
 ): Promise<{ fillQty: number; fillPrice: number; pnl: number }> {
   const filters = await getSymbolFilters(mode, pos.symbol)
   const qty = roundStep(Number(pos.quantity), filters.stepSize)
@@ -289,7 +305,7 @@ async function sellPositionAtMarket(
   const fillQty = order.executedQty || qty
   const fillPrice = order.price || (await getPrice(mode, pos.symbol))
   const entryPrice = Number(pos.entryPrice)
-  const pnl = (fillPrice - entryPrice) * fillQty
+  const pnl = netRealizedPnl(entryPrice, fillPrice, fillQty, feeRatePct)
 
   await db.insert(trades).values({
     symbol: pos.symbol,
@@ -346,7 +362,7 @@ async function checkRiskExits(
       else if (slPct > 0 && changePct <= -slPct) trigger = "stop-loss"
       if (!trigger) continue
 
-      const { fillPrice, pnl } = await sellPositionAtMarket(pos, mode, trigger)
+      const { fillPrice, pnl } = await sellPositionAtMarket(pos, mode, trigger, Number(settings.feeRatePct))
       openSymbols.delete(pos.symbol)
       results.push({
         symbol: pos.symbol,
@@ -487,7 +503,7 @@ async function processSymbol(
       const fillQty = order.executedQty || qty
       const fillPrice = order.price || price
       const entryPrice = Number(pos.entryPrice)
-      const pnl = (fillPrice - entryPrice) * fillQty
+      const pnl = netRealizedPnl(entryPrice, fillPrice, fillQty, Number(settings.feeRatePct))
 
       await finalizeTrade(symbol, side, result.closedCandleOpenTime, {
         quantity: fillQty,

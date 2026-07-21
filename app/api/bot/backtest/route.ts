@@ -31,11 +31,12 @@ export async function GET(request: Request) {
     rsiOversold: settings?.rsiOversold ?? 30,
   }
   const orderSizeUsd = Number(settings?.orderSizeUsd ?? 100)
+  const feeRatePct = Number(settings?.feeRatePct ?? 0.1)
 
   try {
     const klines = await getKlines(mode, symbol, interval, limit)
-    const result = runBacktest(klines, params, orderSizeUsd)
-    return NextResponse.json({ symbol, interval, params, orderSizeUsd, symbols, ...result })
+    const result = runBacktest(klines, params, orderSizeUsd, feeRatePct)
+    return NextResponse.json({ symbol, interval, params, orderSizeUsd, feeRatePct, symbols, ...result })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err), symbol, interval, symbols },

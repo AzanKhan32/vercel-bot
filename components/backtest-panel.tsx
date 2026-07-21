@@ -17,6 +17,7 @@ interface BacktestResponse {
   symbol: string
   interval: string
   orderSizeUsd: number
+  feeRatePct?: number
   symbols: string[]
   summary?: {
     totalTrades: number
@@ -24,6 +25,7 @@ interface BacktestResponse {
     losses: number
     winRate: number
     totalPnl: number
+    totalFees: number
     returnPct: number
     buyHoldReturnPct: number
     maxDrawdownPct: number
@@ -144,6 +146,9 @@ export function BacktestPanel({ symbols, activeSymbol }: { symbols: string[]; ac
                 <p className="mb-2 text-xs text-muted-foreground">
                   Equity curve · {summary.candles} candles
                   {summary.fromTime ? ` · ${fmtDate(summary.fromTime)} – ${fmtDate(summary.toTime ?? 0)}` : ""}
+                  {typeof data.feeRatePct === "number"
+                    ? ` · net of ${data.feeRatePct}% fees (${fmtUsd(summary.totalFees)} total)`
+                    : ""}
                 </p>
                 <ChartContainer config={chartConfig} className="aspect-auto h-[200px] w-full">
                   <AreaChart data={data.equity} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>

@@ -20,6 +20,7 @@ export interface SettingsInput {
   stopLossPct: number
   takeProfitPct: number
   dailyLossLimitUsd: number
+  feeRatePct: number
 }
 
 export async function updateSettings(input: SettingsInput) {
@@ -39,6 +40,7 @@ export async function updateSettings(input: SettingsInput) {
       stopLossPct: String(input.stopLossPct),
       takeProfitPct: String(input.takeProfitPct),
       dailyLossLimitUsd: String(input.dailyLossLimitUsd),
+      feeRatePct: String(input.feeRatePct),
       updatedAt: new Date(),
     })
     .where(eq(botSettings.id, 1))

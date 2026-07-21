@@ -39,6 +39,7 @@ export function StrategyConfig({
   const [stopLoss, setStopLoss] = useState(0)
   const [takeProfit, setTakeProfit] = useState(0)
   const [dailyLossLimit, setDailyLossLimit] = useState(0)
+  const [feeRate, setFeeRate] = useState(0.1)
 
   // Sync form when server settings load/change.
   useEffect(() => {
@@ -55,6 +56,7 @@ export function StrategyConfig({
     setStopLoss(Number(settings.stopLossPct))
     setTakeProfit(Number(settings.takeProfitPct))
     setDailyLossLimit(Number(settings.dailyLossLimitUsd))
+    setFeeRate(Number(settings.feeRatePct))
   }, [settings])
 
   function toggleSymbol(s: string) {
@@ -85,6 +87,7 @@ export function StrategyConfig({
         stopLossPct: stopLoss,
         takeProfitPct: takeProfit,
         dailyLossLimitUsd: dailyLossLimit,
+        feeRatePct: feeRate,
       })
       toast.success("Strategy settings saved")
       onSaved()
@@ -169,16 +172,26 @@ export function StrategyConfig({
               min={0}
               max={1000}
             />
-            <div className="col-span-2">
-              <NumberField
-                id="dailyLossLimit"
-                label="Daily loss limit (USDT)"
-                value={dailyLossLimit}
-                onChange={setDailyLossLimit}
-                min={0}
-              />
-            </div>
+            <NumberField
+              id="dailyLossLimit"
+              label="Daily loss limit (USDT)"
+              value={dailyLossLimit}
+              onChange={setDailyLossLimit}
+              min={0}
+            />
+            <NumberField
+              id="feeRate"
+              label="Fee per side (%)"
+              value={feeRate}
+              onChange={setFeeRate}
+              min={0}
+              max={5}
+              step={0.01}
+            />
           </div>
+          <p className="text-xs text-muted-foreground">
+            {"Trading fee charged on entry and exit. Binance spot is ~0.1%. Applied to live PnL and backtests."}
+          </p>
         </div>
 
         <Button onClick={save} disabled={isPending} className="w-full">
@@ -196,6 +209,7 @@ function NumberField({
   onChange,
   min,
   max,
+  step,
 }: {
   id: string
   label: string
@@ -203,6 +217,7 @@ function NumberField({
   onChange: (n: number) => void
   min?: number
   max?: number
+  step?: number
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -213,6 +228,7 @@ function NumberField({
         value={value}
         min={min}
         max={max}
+        step={step}
         onChange={(e) => onChange(Number(e.target.value))}
         className="font-mono tabular-nums"
       />

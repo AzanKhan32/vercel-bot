@@ -24,6 +24,7 @@ export interface BacktestSummary {
   losses: number
   winRate: number
   totalPnl: number
+  totalFees: number
   returnPct: number
   buyHoldReturnPct: number
   maxDrawdownPct: number
@@ -50,14 +51,17 @@ export function runBacktest(
   klines: Kline[],
   params: StrategyParams,
   orderSizeUsd: number,
+  feeRatePct = 0,
 ): BacktestResult {
   const startEquity = orderSizeUsd
+  const feeRate = feeRatePct / 100
   const emptySummary: BacktestSummary = {
     totalTrades: 0,
     wins: 0,
     losses: 0,
     winRate: 0,
     totalPnl: 0,
+    totalFees: 0,
     returnPct: 0,
     buyHoldReturnPct: 0,
     maxDrawdownPct: 0,
@@ -88,6 +92,7 @@ export function runBacktest(
   let entryTime = 0
   let quantity = 0
   let realizedPnl = 0
+  let totalFees = 0
   let peakEquity = startEquity
   let maxDrawdownPct = 0
 
@@ -110,8 +115,10 @@ export function runBacktest(
         entryTime = time
         quantity = orderSizeUsd / price
       } else if (inPosition && crossedDown && rsiNow > params.rsiOversold) {
-        const pnl = (price - entryPrice) * quantity
+        const fee = (entryPrice * quantity + price * quantity) * feeRate
+        const pnl = (price - entryPrice) * quantity - fee
         realizedPnl += pnl
+        totalFees += fee
         trades.push({
           entryTime,
           entryPrice,
@@ -119,7 +126,7 @@ export function runBacktest(
           exitPrice: price,
           quantity,
           pnl,
-          pnlPct: ((price - entryPrice) / entryPrice) * 100,
+          pnlPct: (pnl / (entryPrice * quantity)) * 100,
         })
         inPosition = false
         quantity = 0
@@ -139,8 +146,10 @@ export function runBacktest(
   if (inPosition) {
     const lastPrice = closes[closes.length - 1]
     const lastTime = closed[closed.length - 1].openTime
-    const pnl = (lastPrice - entryPrice) * quantity
+    const fee = (entryPrice * quantity + lastPrice * quantity) * feeRate
+    const pnl = (lastPrice - entryPrice) * quantity - fee
     realizedPnl += pnl
+    totalFees += fee
     trades.push({
       entryTime,
       entryPrice,
@@ -148,7 +157,7 @@ export function runBacktest(
       exitPrice: lastPrice,
       quantity,
       pnl,
-      pnlPct: ((lastPrice - entryPrice) / entryPrice) * 100,
+      pnlPct: (pnl / (entryPrice * quantity)) * 100,
     })
   }
 
@@ -164,6 +173,7 @@ export function runBacktest(
     losses,
     winRate: trades.length > 0 ? (wins / trades.length) * 100 : 0,
     totalPnl: realizedPnl,
+    totalFees,
     returnPct: (realizedPnl / startEquity) * 100,
     buyHoldReturnPct: ((lastClose - firstClose) / firstClose) * 100,
     maxDrawdownPct,

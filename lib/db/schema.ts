@@ -30,6 +30,10 @@ export const botSettings = pgTable("bot_settings", {
   // Daily realized-loss limit in USD. When today's realized PnL drops to
   // -dailyLossLimitUsd or below, the bot stops opening new positions.
   dailyLossLimitUsd: numeric("daily_loss_limit_usd").notNull().default("0"),
+  // Per-side trading fee as a percentage of notional (Binance spot taker fee
+  // is ~0.1%). Applied on both entry and exit so realized PnL and backtests
+  // reflect real costs rather than gross price moves.
+  feeRatePct: numeric("fee_rate_pct").notNull().default("0.1"),
   tickLock: timestamp("tick_lock", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })
